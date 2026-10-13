@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2a44">
+<title>Mappa di Parigi / Carte de Paris</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;1,400;1,600&display=swap">
+<style>
+  :root {
+    --navy: #1f2a44;
+    --it: #2e8b57;
+    --fr: #2f5fb3;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    padding: calc(10px + var(--safe-top)) 16px 10px;
+    background: var(--navy); color: #fff;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  }
+  header h1 { margin: 0; font-size: 1.05rem; font-weight: 650; }
+  header span { font-size: .75rem; opacity: .75; text-align: right; }
+
+  #map {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    top: calc(44px + var(--safe-top));
+    height: auto;
+  }
+
+  /* Segnaposto grandi, facili da toccare */
+  .pin { background: none; border: none; }
+  .pin .bubble {
+    width: 44px; height: 44px; border-radius: 50% 50% 50% 8px;
+    transform: rotate(-45deg);
+    background: #fff; border: 3px solid var(--navy);
+    box-shadow: 0 3px 8px rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .15s, background .15s;
+  }
+  .pin .bubble span { transform: rotate(45deg); font-size: 22px; line-height: 1; }
+  .pin.active .bubble { background: #ffd54a; transform: rotate(-45deg) scale(1.15); }
+
+  /* Barra di scelta rapida */
+  #chips {
+    position: fixed; left: 0; right: 0; z-index: 900;
+    bottom: calc(10px + var(--safe-bottom));
+    display: flex; gap: 8px; padding: 0 12px; overflow-x: auto;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    transition: opacity .2s, transform .25s;
+  }
+  #chips::-webkit-scrollbar { display: none; }
+  #chips.hidden { opacity: 0; pointer-events: none; transform: translateY(20px); }
+  .chip {
+    flex: 0 0 auto; min-height: 44px; padding: 0 16px;
+    border: none; border-radius: 22px; background: #fff; color: var(--navy);
+    font: inherit; font-size: .9rem; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,.28);
+  }
+  .chip:active { background: #e9edf6; }
+
+  /* Bottone posizione */
+  #locate {
+    position: fixed; right: 12px; z-index: 900;
+    bottom: calc(68px + var(--safe-bottom));
+    width: 48px; height: 48px; border: none; border-radius: 50%;
+    background: #fff; font-size: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    transition: opacity .2s;
+  }
+  #locate.hidden { opacity: 0; pointer-events: none; }
+
+  .leaflet-control-zoom { display: none; } /* su telefono si usa il pizzico */
+  .leaflet-control-attribution { font-size: 9px; }
+
+  /* Scheda in basso (bottom sheet) */
+  #sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
+    max-height: 68dvh; max-height: 68vh;
+    max-height: 68dvh;
+    background: #fff; border-radius: 18px 18px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.3);
+    transform: translateY(105%); transition: transform .28s ease;
+    display: flex; flex-direction: column;
+    padding-bottom: var(--safe-bottom);
+  }
+  #sheet.open { transform: translateY(0); }
+  #sheet.dragging { transition: none; }
+
+  .handle-zone { padding: 10px 0 6px; touch-action: none; flex: 0 0 auto; }
+  .handle { width: 42px; height: 5px; border-radius: 3px; background: #c4c9d4; margin: 0 auto; }
+
+  #close {
+    position: absolute; top: 8px; right: 10px; z-index: 2;
+    width: 44px; height: 44px; border: none; border-radius: 50%;
+    background: rgba(255,255,255,.92); color: var(--navy);
+    font-size: 22px; line-height: 1; box-shadow: 0 1px 6px rgba(0,0,0,.25);
+  }
+
+  .scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .photo {
+    position: relative; width: 100%; aspect-ratio: 16 / 9; background: #dfe4ee;
+  }
+  .photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo .fallback {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    font-size: 3.5rem; background: linear-gradient(135deg, #c9d3ea, #e9edf6);
+  }
+.body {
+  padding: 14px 18px 20px;
+  font-family: "EB Garamond", Garamond, "Times New Roman", serif;
+}
+.body h2 { margin: 0 0 12px; font-size: 1.45rem; font-weight: 600; color: var(--navy); }
+
+.lang p {
+  margin: 0; font-size: 1.12rem; line-height: 1.55; color: #2b2b2b;
+  text-align: justify; text-justify: inter-word;
+  hyphens: auto; -webkit-hyphens: auto;
+}
+.lang em { font-style: italic; }       /* francese in corsivo */
+.lang.it em { font-style: italic; }     /* nomi e termini evidenziati in corsivo */
+.lang b { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.lang p { margin: 0; font-size: 1rem; line-height: 1.5; color: #2b2b2b; }
+
+  /* Schermi larghi: scheda centrata */
+  @media (min-width: 700px) {
+    #sheet { left: 50%; right: auto; width: 560px; transform: translate(-50%, 105%); }
+    #sheet.open { transform: translate(-50%, 0); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>La Parigi di Anna & Ziba · Paris selon Anna & Ziba</h1>
+  <span>Tocca un segnaposto e scopri l'aneddoto<br>Touchez un repère et découvre l'histoire</span>
+</header>
+
+<div id="map"></div>
+
+<button id="locate" aria-label="La mia posizione / Ma position">📍</button>
+<div id="chips" aria-label="Luoghi / Lieux"></div>
+
+<div id="sheet" role="dialog" aria-modal="false" aria-labelledby="sheet-title">
+  <button id="close" aria-label="Chiudi / Fermer">✕</button>
+  <div class="handle-zone"><div class="handle"></div></div>
+  <div class="scroll">
+    <div class="photo">
+      <img id="sheet-img" alt="">
+      <div class="fallback" id="sheet-fallback"></div>
+    </div>
+    <div class="body">
+      <h2 id="sheet-title"></h2>
+      <div class="lang it"><b>ITALIANO</b><p id="sheet-it" lang="it"></p></div>
+      <div class="lang fr"><b>FRANÇAIS</b><p id="sheet-fr" lang="fr"></p></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  /* ------------------------------------------------------------------
+     IMMAGINI PERSONALIZZATE
+     Se compili IMG_BASE (cartella locale o URL GitHub/jsDelivr, con "/" finale),
+     verranno usati i nomi in "file". Se resta vuoto, si usano le foto Wikimedia.
+     Esempi:
+       const IMG_BASE = "immagini/";
+       const IMG_BASE = "https://cdn.jsdelivr.net/gh/TUO-UTENTE/parigi-immagini@main/immagini/";
+  ------------------------------------------------------------------ */
+  const IMG_BASE = "immagini/";
+
+  const wiki = (f) => "https://commons.wikimedia.org/wiki/Special:FilePath/" + encodeURIComponent(f) + "?width=800";
+
+  const places = [
+    {
+      short: "UGC", name: "UGC Les Halles", emoji: "🍿", lat: 48.8625, lng: 2.345,
+      file: "ugc.png", 
+      it: "Ziba ama guardare film, mentre Anna soffre di fulminea narcolessia già dai titoli di testa, alternando domande randomiche sullo svolgimento della trama e le azioni dei personaggi. Per questo, Ziba ha escogitato una tecnica infallibile, ossia trascinare Anna al cinema UGC di les Halles: schermi grandi e suono potente si rivelano degli alleati potenti contro i frequenti attacchi di sonno. Lista non ragionata e non esaustiva dei film visti insieme: <em> Memoir of a snail, Juror #2, The Whale, Napoleon, The Brutalist, Anatomie d’une chute, Anora, Poor Things… </em>",
+      fr: "Ziba adore regarder des films, tandis qu’Anna souffre d’une narcolepsie fulgurante dès le générique de début, ponctuée de questions aléatoires sur le déroulement de l’intrigue et les actions des personnages. C’est pourquoi Ziba a mis au point une technique infaillible : traîner Anna au cinéma UGC de les Halles. Les grands écrans et le son puissant se révèlent être de précieux alliés contre les (très) fréquentes attaques de sommeil. Liste non raisonnée et non exhaustive des films vus ensemble : <em>Memoir of a snail, Juror #2, The Whale, Napoleon, The Brutalist, Anatomie d’une chute, Anora, Poor Things…</em>"
+    },
+    {
+      short: "Comédie", name: "La Comédie Française", emoji: "🎭", lat: 48.86357, lng: 2.33594,
+      file: "comedie.jpg", 
+      it: "Teatro più importante di Parigi, frequentato da Anna e Ziba a più riprese. Menzione d’onore allo spettacolo di Paul Claudel <em>Le soulier de satin</em>, per la mise en scène di Éric Ruf, in quattro parti, per una durata totale di 7 ore e 50 minuti. Incredibilmente, Anna non si è addormentata ed è anzi uscita entusiasta dalla sala, colpita in particolare dalla gente che si era portata i panini da casa e se li era successivamente scofanati tra un atto e l’altro. Esperienza assolutamente da replicare.",
+      fr: "Le théâtre le plus important de Paris, fréquenté à plusieurs reprises par Anna et Ziba. Mention spéciale au spectacle de Paul Claudel, <em>Le Soulier de satin</em>, mis en scène par Éric Ruf, en quatre parties, pour une durée totale de 7 heures et 50 minutes. Contre toute attente, Anna ne s’est pas endormie et est même sortie de la salle absolument enchantée, particulièrement impressionnée par les spectateurs qui avaient apporté leurs propres sandwichs et les avaient ensuite consciencieusement engloutis entre deux actes. Une expérience à renouveler absolument."
+    },
+    {
+      short: "La Colline", name: "Théâtre La Colline", emoji: "🚽", lat: 48.864419, lng: 2.397386,
+      file: "colline.jpg", 
+      it: "L’organizzazione e la gestione discutibile delle cose da parte di Ziba ha fatto sì che dopo la proposta di matrimonio (accettata, fiut), i due dovessero subito dopo andare al Théâtre de la Colline a vedere una tremenda pièce di Wajdi Mouawad dal titolo assolutamente non promettente <em>Willy Protagoras rinchiuso nel cesso (Willy Protagoras enfermé dans les toilettes)</em>; il tutto a stomaco vuoto e ancora nel pieno dello squilibrio emotivo successivo alla proposta. Per fortuna, la presenza provvidenziale di un Mc affianco al teatro ha salvato capra e cavoli, permettendo ai ragazzi di rifocillarsi e di ristabilirsi emozionalmente.",
+      fr: "L’organisation et la gestion pour le moins discutable des choses par Ziba ont fait qu’après la demande en mariage (acceptée, fiout !), les deux ont dû se rendre immédiatement au Théâtre de la Colline pour assister à une terrible pièce de Wajdi Mouawad au titre absolument peu prometteur : <em>Willy Protagoras enfermé dans les toilettes </em>; le tout le ventre vide et encore en plein déséquilibre émotionnel après la demande en mariage. Heureusement, la présence providentielle d’un McDonald’s juste à côté du théâtre a permis de sauver la situation, offrant aux deux jeunes gens l’occasion de se restaurer et de retrouver leur équilibre émotionnel."
+    },
+    {
+      short: "Cinese", name: "Il ristorante cinese dove fanno i nouilles Dan Dan", emoji: "🇨🇳", lat: 48.866722, lng: 2.337028,
+      file: "nouilles.jpg", 
+      it: "Ristorante cinese preferito di Anna e Ziba e comfort food per eccellenza. Ziba è solito prendere i famigerati Nouilles Dan Dan, un piatto assurdo con dentro di tutto (tra cui un tuorlo crudo), e proprio forse da qui è nata la voglia di andare in Cina. Anna ci viene sempre controvoglia dicendo “Ma certo che mi va”, salvo poi prendere sempre il riso alla cantonese dopo aver comunque sfogliato tutto il menù, oppure alla peggio prendendo d’asporto il cibo in un locale affianco il cui piatto forte sono delle palle di riso. La cosa che fa più ridere è che c’è un piatto che dalle foto sembra polenta e ragù, ma che sicuramente non lo è. Nessuno lo ha mai provato.",
+      fr: "Le restaurant chinois préféré d’Anna et Ziba, et leur comfort food par excellence. Ziba prend habituellement les fameuses Nouilles Dan Dan, un plat complètement improbable dans lequel on trouve un peu de tout (dont un jaune d’œuf cru), et c’est peut-être justement de là qu’est née l’envie d’aller en Chine. Anna y vient toujours à contrecœur en disant « Mais oui, bien sûr que ça me dit », avant de prendre systématiquement le riz cantonais après avoir tout de même feuilleté l’intégralité du menu, ou, au pire, de prendre à emporter dans un restaurant juste à côté, dont la spécialité est constituée de boules de riz. Le plus drôle, c’est qu’il y a un plat qui, sur les photos, ressemble à de la polenta avec du ragù, mais qui n’en est certainement pas. Personne ne l’a jamais goûté."
+    },
+    {
+      short: "Louvre", name: "Museo del Louvre", emoji: "🏺", lat: 48.861147, lng: 2.338028,
+      file: "louvre.jpg", 
+      it: "Di gran lunga il luogo culturale preferito di Ziba che conosce a memoria la maggior parte delle sale e il la posizione delle opere all’interno di esse. Inoltre, obbliga spesso  la malcapitata Anna a stare dentro al Louvre fino allo sfinimento (foto in allegato durante la segregazione), in particolare per visitare la sezione delle statue greche, ma soprattutto l’infinito corridoio dei vasi greci. La parte preferita di Anna è inspiegabilmente quella della Mesopotamia (???). Anna chiede sempre a Ziba di spiegare il Louvre a amici o parenti in visita, aggregandosi alla visita e lamentandosi dopo una manciata di minuti dicendo che è stanca.",
+      fr: "De très loin le lieu culturel préféré de Ziba, qui connaît par cœur la plupart des salles ainsi que l’emplacement des œuvres qui s’y trouvent. Il oblige par ailleurs régulièrement la pauvre Anna à rester au Louvre jusqu’à l’épuisement (photo ci-jointe prise pendant sa séquestration), notamment pour visiter la section des statues grecques, mais surtout l’interminable couloir des vases grecs. La partie préférée d’Anna est, de manière inexplicable, celle consacrée à la Mésopotamie (???). Anna demande toujours à Ziba de faire visiter le Louvre aux amis ou aux membres de la famille de passage, tout en se joignant elle-même à la visite et en se plaignant au bout de quelques minutes qu’elle est fatiguée."
+    },
+    {
+      short: "Teatro muto", name: "Il teatro della lingua dei segni", emoji: "🤐", lat: 48.881487, lng: 2.333145,
+      file: "signes.jpg", 
+      it: "Esperienza mistica proposta da Anna a Ziba, che purtroppo non ha avuto nessun sequel, per renderlo partecipe della sua passione durata sei mesi: la lingua dei segni (facciamo finta che tutto questo sia normale). Nonostante le premesse decisamente non incoraggianti, ad entrambi è piaciuto molto lo spettacolo, viste le vibes da “Gita di classe della lingua dei segni”. Ziba ha imparato ad applaudire e a dire coglione nella lingua dei segni, Anna ha avuto il canto del cigno della sua effimera e un po’ bizzarra passione.",
+      fr: "Expérience mystique proposée par Anna à Ziba, qui n’a malheureusement jamais connu de suite, afin de lui faire découvrir sa passion qui aura duré six mois : la langue des signes (faisons comme si tout cela était parfaitement normal). Malgré des prémisses pour le moins peu encourageantes, le spectacle leur a beaucoup plu à tous les deux, notamment grâce à ses vibes de « sortie scolaire de la classe de langue des signes ». Ziba a appris à applaudir et à dire connard en langue des signes, tandis qu’Anna a offert à sa passion éphémère et quelque peu farfelue son chant du cygne."
+    },
+    {
+      short: "Marwa", name: "Marwa", emoji: "🇱🇧", lat: 48.83055, lng: 2.296139,
+      file: "marwa.jpg", 
+      it: "Durante la Dantzig Era di Ziba, Marwa era il libanese di fiducia dell’appartamento e il preferito di Anna. Solo dopo tre anni si è scoperto che Marwa non è il nome del gestore, chiamato Patrick. Il buon Patrick, oltre a scatarrare ogni due per tre a causa dei cinque pacchetti di sighe quotidiani, era solito apostrofare Anna con un sonoro Bonjour Princesse, che scatenava la gelosia di Ziba. Procedeva poi a moralizzarla quando manifestava la sua comprensibile volontà di non aggiungere la casalinga salsa all’aglio (salsa all’aglio=aglio spremuto) al suo panino, scatenando l’ira di Ziba.",
+      fr: "Pendant la Dantzig Era de Ziba, Marwa était le Libanais de confiance de l’appartement et le préféré d’Anna. Ce n’est qu’au bout de trois ans qu’on a découvert que Marwa n’était pas son prénom : le gérant s’appelait en réalité Patrick. Le brave Patrick, en plus de cracher toutes les deux minutes à cause de ses cinq paquets de clopes quotidiens, avait l’habitude d’apostropher Anna d’un sonore Bonjour Princesse, ce qui déclenchait immédiatement la jalousie de Ziba. Il se mettait ensuite à la sermonner lorsqu’elle exprimait la volonté pourtant parfaitement compréhensible de ne pas ajouter la sauce à l’ail maison (sauce à l’ail = ail pressé) à son sandwich, déclenchant cette fois la colère de Ziba."},
+    {
+      short: "Kémia", name: "Kémia", emoji: "👨🏼‍🍳", lat: 48.8720025, lng: 2.3476511,
+      file: "kemia.png", 
+      it: "Ristorante parigino del cuore di Anna e Ziba, sede di numerose cene per festeggiare occasioni speciali, o semplicemente per godere del buon cibo. Pochi coperti, atmosfera chill ma raffinata e una formula vincente: dei piatti da condividere con il tavolo. Ad ogni portata Ziba è solito annusare, gustare e scomporre il piatto per carpirne i segreti e concludere con la più classica delle asserzioni spaccone: “Beh ma questo posso tranquillamente farlo a casa” (procederà a non farne neanche uno). Oltre alle sardine marinate, il signature dish preferito è il tarama fatto in casa, servito con abbondante pane che Anna chiederà esponenzialmente in quantità sempre maggiori. Domanda classica di Anna una volta finiti i piatti “C’è un dolce al cioccolato”?",
+      fr: "Restaurant parisien chouchou d’Anna et Ziba, où ils ont dîné à de nombreuses reprises pour célébrer des occasions spéciales ou tout simplement pour profiter de bons petits plats. Peu de tables, une ambiance chill mais raffinée et une formule gagnante : des plats à partager avec toute la tablée. À chaque plat, Ziba a l’habitude de le renifler, de le goûter et de le décortiquer pour en découvrir les secrets, avant de conclure par la plus classique des affirmations de frimeur : « Bon, mais ça, je peux carrément le faire à la maison » (il ne manquera pas de ne jamais en refaire un seul). Outre les sardines marinées, le signature dish préféré reste le tarama maison, servi avec une généreuse quantité de pain qu’Anna demandera en quantités toujours plus importantes, de manière exponentielle. Question classique d’Anna une fois les plats terminés : « Il y a un dessert au chocolat ? »"
+    },
+    {
+      short: "NDV", name: "Notre Dame des Victoires", emoji: "✝️", lat: 48.866525, lng: 2.340849,
+      file: "ndv.png", 
+      it: "Centro spirituale per entrambi, è stata sede della prima messa parigina per Ziba, quando era venuto a trovare Anna prima del suo arrivo nel gennaio del 2022. La messa domenicale delle 11h00 con annesso pranzo in posti limitrofi (Canard Street (R.I.P.), Palle di riso, Bistrot Victoires) è stato un appuntamento fisso che ha permesso anche di incontrare tanti amici. Dopo un voto di Ziba alla Madonna di Notre Dame des Victoires riguardante il Milan (aveva chiesto il passaggio del turno di semifinale di Champions nel 2023, e tutti sappiamo com'è andata) che non è stato esaudito, la frequentazione della chiesa è diminuita drasticamente. ",
+      fr: "Centre spirituel pour tous les deux, elle a été le lieu de la première messe parisienne de Ziba, lorsqu’il était venu rendre visite à Anna avant son arrivée en janvier 2022. La messe dominicale de 11h00, suivie d’un déjeuner dans les environs (Canard Street (R.I.P.), Boules de Riz, Bistrot Victoires), était devenue un rendez-vous incontournable qui leur a également permis de retrouver de nombreux amis. Après un vœu de Ziba à la Vierge de Notre-Dame-des-Victoires concernant l’ A.C. Milan — il avait demandé que le club passe le cap des demi-finales de la Ligue des champions en 2023, et nous savons tous comment cela s’est terminé — la fréquentation de l’église a drastiquement diminué."
+    },
+    {
+      short: "Palais Royal", name: "Giardini di Palais Royal", emoji: "🐕", lat: 48.863585, lng: 2.336204,
+      file: "palais.jpg", 
+      it: "Luogo preferito per le passeggiate e a detta di entrambi il miglior posto di Parigi. Imperativo il tè matcha rigorosamente da Kitsuné, anche se Ziba è solito versarselo addosso ed essere conseguentemente preso in giro da Anna. Attività preferita a Palais Royal è lo <em>Shiba-watching</em>, vale a dire il conto del numero di shiba presenti a spasso con i rispettivi padroni. Dopo averne visto uno, Ziba è solito esclamare con fare infantile Cane, per essere ancora una volta preso in giro da Anna perché non ha il coraggio di andare ad accarezzarli. I due sono anche soliti passare davanti ai ristoranti lì presenti paventando la possibilità di poterci mangiare un giorno: sogno infranto una volta consultati i prezzi sul menù. ",
+      fr: "Lieu préféré pour se promener et, de l’avis des deux, le meilleur endroit de Paris. Le thé matcha, impérativement chez Kitsuné, est un passage obligé, même si Ziba a l’habitude de s’en renverser dessus et de se faire, par conséquent, gentiment charrier par Anna. L’activité préférée au Palais Royal est le <em>Shiba-watching</em>, c’est-à-dire compter le nombre de shibas présents en promenade avec leurs maîtres. Après en avoir repéré un, Ziba s’exclame généralement d’un air enfantin : Cane, pour se faire une fois de plus taquiner par Anna parce qu’il n’ose pas aller les caresser. Les deux ont également l’habitude de passer devant les restaurants du quartier en évoquant la possibilité d’y manger un jour : un rêve qui s’effondre dès qu’ils consultent les prix du menu."
+    },
+    {
+      short: "St. Gen", name: "Biblioteca di Sainte Geneviève", emoji: "📚", lat: 48.8471361, lng: 2.3457504,
+      file: "gen.jpg", 
+      it: "Nome della Santa patrona di Parigi, ma soprattutto della biblioteca che evoca in Anna e Ziba un non troppo leggero PTSD: nell’annata 2022 hanno passato più tempo lì che non nelle rispettive case (sabati compresi, per fortuna non era aperta la domenica), raggiungendo livelli da esaurimento anche a causa del contorto e dispotico sistema delle pause. Dopo le rispettive lauree e nonostante avessero ottenuto la tanta agognata tessera rosa per saltare la fila, hanno smesso giustamente di andarci, anche perchè Ziba è probabilmente finito nella black list dei guardiani per i suoi continui litigi e scherni al personale di servizio (chiedere ulteriori chiarimenti al diretto interessato).",
+      fr: "Nom de la sainte patronne de Paris, mais surtout de la bibliothèque qui évoque chez Anna et Ziba un TSPT pas si léger : en 2022, ils y ont passé plus de temps que dans leurs propres appartements respectifs (samedis compris, heureusement qu’elle était fermée le dimanche), atteignant des niveaux d’épuisement assez avancés, notamment à cause du système de pauses aussi tortueux que despotique. Après leurs diplômes respectifs, et bien qu’ils aient enfin obtenu la précieuse carte rose qui leur permettait de couper la file, ils ont fort heureusement cessé d’y aller, notamment parce que Ziba a probablement fini sur la liste noire des gardiens à force de se disputer avec eux et de se moquer du personnel de service (pour plus de précisions, s’adresser directement à l’intéressé)."
+    },
+    {
+      short: "RG", name: "Stade Roland Garros", emoji: "🎾", lat: 48.846869, lng: 2.248418,
+      file: "rg.jpg", 
+      it: "Sede dello Slam tennistico più affascinante del mondo, è stato anche la location di un date indimenticabile di Anna e Ziba, che hanno avuto la fortuna di vedere al primo turno sul campo centrale Sinner contro un francese casuale (n.d.r. Arthur Rinderknech). Anna è rimasta particolarmente affascinata dal suono dell’impatto tra la pallina e la racchetta, dal suono delle strisciate, e dal silenzio tombale durante i punti. Forse per questo si vergognava quando Ziba urlava cose casuali tra un punto e l’altro (probabilmente insulti contro il francese avversario). Da quel momento, Anna gasatissima dice ogni volta che viene fuori l’argomento quanto è bello vedere il tennis dal vivo, e soprattutto quanto è appassionante praticarlo, salvo poi innervosirsi pesantemente ogni volta che ci gioca con Ziba nonostante i numerosi anni passati in un circolo varesino.",
+      fr: "Temple du tournoi du Grand Chelem le plus fascinant du monde, Roland-Garros a également été le cadre d’un date inoubliable pour Anna et Ziba, qui ont eu la chance d’assister au premier tour, sur le court central, au match de Sinner contre un Français sorti de nulle part (N.D.L.R. : Arthur Rinderknech). Anna a été particulièrement fascinée par le bruit de l’impact entre la balle et la raquette, par le son des glissades sur la terre battue et par le silence de mort pendant les échanges. C’est peut-être pour cela qu’elle avait un peu honte lorsque Ziba criait des trucs au hasard entre les points (probablement des insultes à l’encontre de l’adversaire français). Depuis, chaque fois que le sujet revient, Anna explique à quel point c’est génial de voir du tennis en direct, et surtout à quel point c’est passionnant d’en pratiquer… avant de s’énerver copieusement chaque fois qu’elle joue avec Ziba, malgré les nombreuses années passées dans un club de tennis de Varèse."
+    },
+    {
+      short: "CDG", name: "Aeroporto di Charles de Gaulle", emoji: "🐄", lat: 49.005264, lng:  2.576873,
+      file: "cdg.jpg", 
+      it: "Luogo di partenza e di arrivo dal sapore dolceamaro per entrambi. Non si sa bene per quale motivo, forse per la tensione del viaggio, o forse per le stressanti misure di sicurezza, l’aeroporto è stato spesso sede di pesanti litigi tra Anna e Ziba. Già la prima volta che Ziba era venuto a trovare Anna, quest’ultima si era fatta trovare con un delizioso canelé, rifiutato categoricamente dal suo ragazzo che non era proprio nel mood (ignoto ancora il motivo). Entrambi sanno però riappacificarsi non appena scorgono una mucca rosa in plastica in grandezza 1:1 presente a lato della pista di partenza (???), e si guardano ridacchiando.",
+      fr: "Lieu de départ et d’arrivée au goût doux-amer pour tous les deux. On ne sait pas très bien pourquoi — peut-être la tension du voyage, ou bien les mesures de sécurité particulièrement stressantes — mais l’aéroport a souvent été le théâtre de grosses disputes entre Anna et Ziba. Déjà la toute première fois que Ziba était venu rendre visite à Anna, cette dernière l’attendait avec un délicieux canelé, catégoriquement refusé par son copain, qui n’était manifestement pas dans le mood (la raison reste encore inconnue). Tous les deux savent cependant se réconcilier dès qu’ils aperçoivent une vache rose en plastique grandeur nature installée au bord de la piste de décollage (???), et se regardent en ricanant."
+    },
+    {
+      short: "Châtelet", name: "Place du Châtelet", emoji: "🤼", lat: 48.857524, lng: 2.347463,
+      file: "chatelet.jpg", 
+      it: "Celebre piazza parigina legata in maniera tragicomica ad una delle più deliranti e grottesche esperienze parigine di Anna e Ziba (e non solo). Durante la Nuit Blanche (manifestazione da evitare in ogni maniera possibile) del 2023, si ritrovarono per qualche strano motivo sulla Place du Châtelet, dove era stato allestito un ring di lotta. Incuriositi, aspettarono un’oretta buona per poi assistere, in stato comatoso, verso circa le tre di notte, ad una squallidissima esibizione di Lucha Libre. A pensarci ora fa ridere, ma anche riflettere.",
+      fr: "Célèbre place parisienne liée de manière tragicomique à l’une des expériences parisiennes les plus délirantes et grotesques vécues par Anna et Ziba (et pas seulement eux). Lors de la Nuit Blanche 2023 (événement à éviter absolument par tous les moyens possibles), ils se sont retrouvés, pour une raison mystérieuse, sur la place du Châtelet, où un ring de catch avait été installé. Intrigués, ils ont attendu une bonne heure avant d’assister, dans un état quasi comateux, vers trois heures du matin, à un spectacle de Lucha Libre particulièrement minable. Avec le recul, ça fait rire, mais ça donne aussi matière à réflexion."
+    },
+    {
+      short: "Tranché", name: "Tranché", emoji: "🍪", lat: 48.883747, lng: 2.321091,
+      file: "tranche.jpg", 
+      it: "All’apparenza una normalissima boulangerie, il cui pregio sembra essere solamente quello di essere ad una walk-distance dall’ultimo appartamento di Anna nel 17°. Tuttavia, ha assunto progressivamente un valore affettivo imprescindibile per entrambi, perché è lì che i due hanno gustato per la prima volta il loro amatissimo dolce capace di creare una forte e inestricabile dipendenza da zuccheri: il brookie; ibrido mitologico per metà brownie e metà cookie è diventato per Anna e Ziba un chiodo fisso. Anche quando lo stesso dolce viene trovato in altre boulangeries, per rispetto del primo amore nessuno dei due si azzarda a mangiarlo: esiste solo il brookie di Tranché.",
+      fr: "À première vue, une boulangerie tout à fait banale, dont le principal mérite semble être de se trouver à distance de marche du dernier appartement d’Anna dans le 17ᵉ. Pourtant, elle a progressivement acquis une valeur affective incontournable pour tous les deux, car c’est là qu’ils ont goûté pour la première fois à leur pâtisserie préférée, capable de créer une dépendance au sucre aussi forte qu’inextricable : le brookie. Hybride mythologique mi-brownie, mi-cookie, il est devenu une véritable obsession pour Anna et Ziba. Même lorsqu’ils retrouvent le même gâteau dans d’autres boulangeries, par respect pour leur premier amour, aucun des deux n’ose y toucher : il n’existe qu’un seul brookie, celui de Tranché."
+    },
+    {
+      short: "Opéra", name: "Opéra Palais Garnier", emoji: "💃🏻", lat: 48.872029, lng: 2.331785,
+      file: "opera.jpg", 
+      it: "Regalo per Anna da parte di Ziba, vista la passione della prima per i balletti. Grande sforzo invece per Ziba, difficilmente attirato da corpi danzanti. In questo caso hanno assistito alla rappresentazione di <em>Sylvia</em>, nella stupenda cornice del Palais Garnier, visitato per la prima volta da entrambi. Se lo spettacolo non fosse memorabile di per sé, va aggiunto che quel giorno, pochi attimi prima di entrare in sala, i due hanno assistito sulla scalinata antistante il teatro, in leggera differita (con annessi spoiler, sigh) visto il ritardo cronico di Anna, alla diretta dell’elezione di Papa Leone XIV. Il tutto con un tempismo perfetto. ",
+      fr: "Cadeau de Ziba à Anna, compte tenu de la passion de cette dernière pour les ballets. Un véritable effort de la part de Ziba, qui est généralement assez peu attiré par les corps en mouvement dansant. Cette fois-ci, ils ont assisté à une représentation de <em>Sylvia</em>, dans le cadre somptueux du Palais Garnier, qu’ils découvraient tous les deux pour la première fois. Et si le spectacle n’était pas déjà mémorable en soi, il faut ajouter que ce jour-là, quelques instants avant d’entrer dans la salle, les deux ont assisté, sur les marches devant le théâtre, à la retransmission en direct de l’élection du pape Léon XIV — avec un léger différé et les spoilers qui vont avec, en raison du retard chronique d’Anna. Le tout avec un timing absolument parfait."
+    },
+    {
+      short: "Climb Up", name: "Climb Up Porte d'Italie", emoji: "🧗🏻", lat: 48.817005, lng:  2.359718,
+      file: "climb.jpg", 
+      it: "Famigerata palestra di scalata alle porte di Parigi. Anna, appassionata scalatrice sin da piccola, decide di tirare in mezzo Ziba per provare ad andare a scalare insieme ad altri amici bravi come lei. Ziba ci prova qualche volta ma non riesce, lamentandosi del fatto che essendo alto ha un baricentro strano per cui non riesce a stare in equilibrio (???), mentre invece Anna essendo mignon può fare quello che vuole. La verità è che Ziba non aveva pazienza per imparare, Anna neanche per insegnare, quindi dopo un tot questa attività di coppia è stata inesorabilmente droppata da entrambi per salvaguardare il buonumore nella coppia (e se vogliamo dirla tutta anche perchè costava una fucilata).",
+      fr: "Célèbre salle d’escalade aux portes de Paris. Anna, passionnée d’escalade depuis toute petite, décide d’embarquer Ziba pour essayer de grimper ensemble avec d’autres amis aussi doués qu’elle. Ziba essaie à plusieurs reprises, mais n’y arrive pas vraiment, se plaignant du fait qu’étant grand, il a un centre de gravité bizarre et qu’il n’arrive donc pas à garder son équilibre (???), tandis qu’Anna, étant mignonne — au sens de petite et menue — peut faire absolument ce qu’elle veut. La vérité, c’est que Ziba n’avait pas la patience d’apprendre et Anna pas davantage celle d’enseigner. Au bout d’un certain temps, cette activité de couple a donc été inexorablement abandonnée par les deux, afin de préserver la bonne humeur au sein du couple (et, si l’on veut être tout à fait honnêtes, aussi parce que ça coûtait une blinde)."
+    },
+    {
+      short: "Troyes", name: "Troyes", emoji: "🍦", lat: 48.2971626, lng: 4.0746257,
+      file: "troyes.jpg", 
+      it: "Non è a Parigi, è vero, ma è una tappa imprescindibile nella storia di Anna e Ziba. Volendo fare un weekend fuori per una festività casuale francese, Ziba propone Troyes più per un becero gioco di parole che non per l’effettiva attrattiva della città. I primi segnali non proprio incoraggianti arrivano subito dalla proprietaria dell’Airbnb, che si stupisce del fatto che i due restino addirittura un weekend a Troyes. Infatti, dopo essersi accorti che non c’è una minchia da vedere, noleggiano delle bici elettriche e si fanno un giro nei dintorni dopo una spesa al mercato di Troyes. Nel loro percorso si accorgono che Troyes è circondata dal nulla cosmico (campi e vacche). Anna, infuriata si sente intrappolata da Ziba e decide quindi di anticipare il Flixbus di ritorno. Anna, che si è lamentata per tutta la (breve a questo punto) permanenza del fatto che a Troyes non ci sono gelaterie (???).",
+      fr: "Ce n’est certes pas à Paris, mais c’est une étape incontournable dans l’histoire d’Anna et Ziba. Voulant partir en week-end pour une quelconque fête française, Ziba propose Troyes, davantage pour un jeu de mots bien débile que pour l’attrait réel de la ville. Les premiers signes pas franchement encourageants arrivent immédiatement de la part de la propriétaire de l’Airbnb, qui s’étonne que les deux aient prévu de rester carrément tout un week-end à Troyes. Après s’être rendu compte qu’il n’y avait pas grand-chose à voir, ils louent donc des vélos électriques et partent faire un tour dans les environs, après avoir fait quelques courses au marché de Troyes. Au fil de leur balade, ils découvrent que Troyes est entourée du néant absolu : des champs et des vaches à perte de vue. Furieuse, Anna se sent prise au piège par Ziba et décide donc d’avancer son FlixBus de retour. Anna, qui s’est plainte pendant toute la durée de ce séjour — finalement assez court — du fait qu’il n’y avait pas de glaciers à Troyes (???)."
+    },
+    {
+      short: "La Bellevilloise", name: "Concerto PopX a La Bellevilloise", emoji: "🐠", lat: 48.868345, lng:  2.392,
+      file: "popx.jpg", 
+      it: "Una delle esperienze più surreali vissute da Anna, Ziba ed amici a Parigi. Grandissimi fan delle performances musicali del maestro Panizza (Popx N.d.r) già esperite qualche anno prima in terra francese, tra settembre 2025 e gennaio 2026 decidono di assistere non a uno, ma ben a due concerti del loro beniamino. Il primo settembrino è di breve durata perché facente parte di un festival più ampio, ma controbilanciato da un delirante dj set in seconda serata del Panizza stesso vestito con una camicia sintetica assolutamente non traspirante decorata da pesci marini (???). La serata si conclude con Greg che si promette di cercare lavoro ad un collaboratore di Panizza (???). Il concerto di gennaio è stato invece caratterizzato da una simpatica escursione termica tra sala sotterranea alla temperatura del sole e l’esterno polare. Fun fact: la cantante che ha aperto il concerto faceva solo canzoni sulla frutta e regalava mandarini alla gente. ",
+      fr: "L’une des expériences les plus surréalistes vécues par Anna, Ziba et leurs amis à Paris. Grands fans des performances musicales du maestro Panizza (Pop X), qu’ils avaient déjà eu l’occasion de voir quelques années auparavant sur le sol français, ils décident, entre septembre 2025 et janvier 2026, d’assister non pas à un, mais bien à deux concerts de leur idole. Le premier, en septembre, est de courte durée puisqu’il fait partie d’un festival plus large, mais il est compensé par un DJ set complètement délirant en deuxième partie de soirée, assuré par Panizza lui-même, vêtu d’une chemise synthétique absolument pas respirante ornée de poissons marins (???). La soirée se termine avec Greg qui promet de chercher du travail pour un collaborateur de Panizza (???). Le concert de janvier est, quant à lui, marqué par une sympathique excursion thermique entre une salle souterraine à la température du soleil et un extérieur polaire. Fun fact : la chanteuse qui assurait la première partie ne chantait que des chansons sur les fruits et distribuait des mandarines au public."
+    },
+    {
+      short: "Place d'IT", name: "Place d'Italie", emoji: "🇮🇹", lat: 48.8309446, lng:  2.3558932,
+      file: "placedit.jpg", 
+      it: "Piazza parigina che ospita l’appartamento in cui Ziba ha vissuto l’ultimo anno da scapolo. La sciagurata idea di portare l’Xbox 360 ha di sicuro diminuito la produttività dei membri dell’appartamento, ma ha creato dei bei momenti di convivialità (Ziba che umilia chiunque a Dragon Ball o Pol che detta legge su COD). Memorabili anche le discussioni con Tia e Greg su chi sia migliore tra Delacroix e Cézanne (Delacroix ovviamente). In tutto questo Anna ogni tanto è spawnata per rimettere i ragazzi in riga e proporre dei pomeriggi di lavoro nel weekend, portando sempre dell’ottimo mango per merenda. Ziba ogni volta che viene Anna è contento e quindi cerca sempre di cucinare cose assurde, tanto poi le splitta con gli altri (si veda tagliatelle al ragù di coniglio).",
+      fr: "Place parisienne qui abrite l’appartement dans lequel Ziba a vécu sa dernière année de célibataire. La malencontreuse idée d’apporter la Xbox 360 a certainement diminué la productivité des habitants de l’appartement, mais elle a aussi créé de beaux moments de convivialité (Ziba qui humilie tout le monde à Dragon Ball, ou Pol qui fait la loi sur COD). Mémorables également, les débats avec Tia et Greg sur la question de savoir qui est le meilleur entre Delacroix et Cézanne (Delacroix, évidemment). Dans tout ça, Anna apparaissait de temps en temps pour remettre les garçons dans le droit chemin et proposer des après-midis de travail le week-end, en apportant toujours de l’excellent mango pour le goûter. Ziba est toujours content quand Anna vient, et cherche donc systématiquement à cuisiner des trucs improbables, sachant qu’il pourra ensuite les partager avec les autres (voir, par exemple, les tagliatelles au ragù de lapin)."
+    },
+    {
+      short: "Avenue Secrétan", name: "78 Avenue Secrétan", emoji: "👩🏻‍❤️‍💋‍👨🏻", lat: 48.879354, lng:  2.377244,
+      file: "secretan.jpg", 
+      it: "La casa in cui andranno a vivere insieme Anna e Ziba. Si tratta di un nido d’amore composto da 28 compatti (forse troppo compatti) metri quadrati, che ospiterà i novelli sposi e i loro numerosissimi effetti personali, tendenzialmente di scarsa utilità pratica ma di indubbio gusto estetico. Anna e Ziba non vedo l’ora di accogliervi per pranzi, cene, o altri momenti conviviali come tea-times o pause caffé (max. 3 persone mi raccomando!). Il vicino parco des Buttes-Chaumont suggerisce anche la possibilità di frequenti pic-nic o brunch <em>en plein air.</em> ",
+      fr: "La maison dans laquelle Anna et Ziba vont vivre ensemble. Il s’agit d’un petit nid d’amour de 28 mètres carrés (peut-être un peu trop compacts), qui accueillera les jeunes mariés ainsi que leurs très nombreux effets personnels, généralement d’une utilité pratique assez limitée mais d’un goût esthétique indéniable. Anna et Ziba ont hâte de vous y accueillir pour des déjeuners, des dîners ou autres moments conviviaux, comme des tea-times ou des pauses café (3 personnes maximum, attention !). Le parc des Buttes-Chaumont, tout proche, offre également la possibilité de profiter de nombreux pique-niques ou brunchs <em>en plein air.</em> "
+    },
+  ];
+
+  /* ---------- Mappa ---------- */
+  const map = L.map("map", {
+    zoomControl: false,
+    tap: true,
+    attributionControl: true
+  }).setView([48.8650, 2.3300], 12);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+  }).addTo(map);
+
+  /* ---------- Elementi UI ---------- */
+  const sheet = document.getElementById("sheet");
+  const chips = document.getElementById("chips");
+  const locateBtn = document.getElementById("locate");
+  const imgEl = document.getElementById("sheet-img");
+  const fbEl = document.getElementById("sheet-fallback");
+  let activeIndex = null;
+  const markers = [];
+
+  function makeIcon(emoji, active) {
+    return L.divIcon({
+      className: "pin" + (active ? " active" : ""),
+      html: '<div class="bubble"><span>' + emoji + "</span></div>",
+      iconSize: [44, 44],
+      iconAnchor: [22, 44]
+    });
+  }
+
+  function openPlace(i) {
+    const p = places[i];
+
+    if (activeIndex !== null) markers[activeIndex].setIcon(makeIcon(places[activeIndex].emoji, false));
+    activeIndex = i;
+    markers[i].setIcon(makeIcon(p.emoji, true));
+
+  document.getElementById("sheet-title").textContent = p.name;
+  document.getElementById("sheet-it").innerHTML = p.it;
+  document.getElementById("sheet-fr").innerHTML = p.fr;
+
+
+    imgEl.style.display = "block";
+    fbEl.style.display = "none";
+    fbEl.textContent = p.emoji;
+    imgEl.alt = p.name;
+    imgEl.onerror = () => { imgEl.style.display = "none"; fbEl.style.display = "flex"; };
+    imgEl.src = IMG_BASE ? IMG_BASE + p.file : wiki(p.wiki);
+
+    sheet.querySelector(".scroll").scrollTop = 0;
+    sheet.classList.add("open");
+    chips.classList.add("hidden");
+    locateBtn.classList.add("hidden");
+
+    // Sposta la mappa in modo che il segnaposto resti visibile sopra la scheda
+    requestAnimationFrame(() => {
+      const z = Math.max(map.getZoom(), 14);
+      const pt = map.project([p.lat, p.lng], z);
+      pt.y += sheet.offsetHeight / 2 - 22;
+      map.flyTo(map.unproject(pt, z), z, { duration: 0.6 });
+    });
+  }
+
+  function closeSheet() {
+    sheet.classList.remove("open");
+    sheet.style.transform = "";
+    chips.classList.remove("hidden");
+    locateBtn.classList.remove("hidden");
+    if (activeIndex !== null) {
+      markers[activeIndex].setIcon(makeIcon(places[activeIndex].emoji, false));
+      activeIndex = null;
+    }
+  }
+
+  /* ---------- Segnaposto e scorciatoie ---------- */
+  places.forEach((p, i) => {
+    const m = L.marker([p.lat, p.lng], { icon: makeIcon(p.emoji, false), title: p.name, riseOnHover: true })
+      .addTo(map)
+      .on("click", () => openPlace(i));
+    markers.push(m);
+
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = p.emoji + " " + p.short;
+    b.addEventListener("click", () => openPlace(i));
+    chips.appendChild(b);
+  });
+
+  map.fitBounds(L.latLngBounds(places.map(p => [p.lat, p.lng])), { paddingTopLeft: [30, 30], paddingBottomRight: [30, 90] });
+
+  /* ---------- Chiusura ---------- */
+  document.getElementById("close").addEventListener("click", closeSheet);
+  map.on("click", closeSheet);
+
+  // Trascina la scheda verso il basso per chiuderla
+  (function enableSwipe() {
+    const zone = sheet.querySelector(".handle-zone");
+    let startY = null, dy = 0;
+    zone.addEventListener("touchstart", (e) => {
+      startY = e.touches[0].clientY; dy = 0; sheet.classList.add("dragging");
+    }, { passive: true });
+    zone.addEventListener("touchmove", (e) => {
+      if (startY === null) return;
+      dy = Math.max(0, e.touches[0].clientY - startY);
+      sheet.style.transform = "translateY(" + dy + "px)";
+    }, { passive: true });
+    zone.addEventListener("touchend", () => {
+      sheet.classList.remove("dragging");
+      if (dy > 90) closeSheet(); else sheet.style.transform = "";
+      startY = null;
+    });
+  })();
+
+  /* ---------- La mia posizione ---------- */
+  let me = null;
+  locateBtn.addEventListener("click", () => map.locate({ setView: true, maxZoom: 15 }));
+  map.on("locationfound", (e) => {
+    if (me) map.removeLayer(me);
+    me = L.circleMarker(e.latlng, { radius: 9, color: "#fff", weight: 3, fillColor: "#1a73e8", fillOpacity: 1 }).addTo(map);
+  });
+  map.on("locationerror", () => alert("Posizione non disponibile / Position indisponible"));
+</script>
+</body>
+</html>
