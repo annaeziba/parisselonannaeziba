@@ -121,6 +121,19 @@
 }
 .body h2 { margin: 0 0 12px; font-size: 1.45rem; font-weight: 600; color: var(--navy); }
 
+.lang { margin: 0; }
+
+/* Separatore tra le due lingue: spazio + filetto con un rombo al centro */
+.lang.fr { position: relative; margin-top: 30px; padding-top: 26px; }
+.lang.fr::before {
+  content: ""; position: absolute; top: 0; left: 8%; right: 8%; height: 1px;
+  background: linear-gradient(90deg, transparent, #b9c0d0 20%, #b9c0d0 80%, transparent);
+}
+.lang.fr::after {
+  content: ""; position: absolute; top: -4px; left: 50%;
+  width: 9px; height: 9px; margin-left: -4.5px;
+  background: #fff; border: 1px solid #b9c0d0; transform: rotate(45deg);
+}
 .lang p {
   margin: 0; font-size: 1.12rem; line-height: 1.55; color: #2b2b2b;
   text-align: justify; text-justify: inter-word;
@@ -128,8 +141,17 @@
 }
 .lang em { font-style: italic; }       /* francese in corsivo */
 .lang.it em { font-style: italic; }     /* nomi e termini evidenziati in corsivo */
-.lang b { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.lang b {
+  display: inline-block; font-size: .7rem; letter-spacing: .06em;
+  padding: 3px 8px; border-radius: 4px; color: #fff; margin-bottom: 8px;
+}
 .lang p { margin: 0; font-size: 1rem; line-height: 1.5; color: #2b2b2b; }
+
+  /* Schermi larghi: scheda centrata */
+  @media (min-width: 700px) {
+    #sheet { left: 50%; right: auto; width: 560px; transform: translate(-50%, 105%); }
+    #sheet.open { transform: translate(-50%, 0); }
+  }
 
   /* Schermi larghi: scheda centrata */
   @media (min-width: 700px) {
